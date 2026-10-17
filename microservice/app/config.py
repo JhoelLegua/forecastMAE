@@ -1,7 +1,8 @@
 """
 Microservice Configuration Module.
 Loads environment variables using Pydantic Settings and resolves absolute paths
-for models, data, charts, storage, persistent logs, and templates.
+for models, data, charts, storage, persistent logs, SQL schemas, and templates.
+Supports dynamic switching between AWS S3 / Local Storage and AWS RDS / Local PostgreSQL.
 """
 
 import os
@@ -23,6 +24,7 @@ STORAGE_REPORTS_DIR = STORAGE_DIR / "reports"
 STORAGE_LOGS_DIR = STORAGE_DIR / "logs"
 TEMPLATES_DIR = BASE_DIR / "app" / "templates"
 CHARTS_DIR = BASE_DIR / "static" / "charts"
+SQL_DIR = BASE_DIR / "sql"
 
 # Asegurar existencia de directorios de almacenamiento
 os.makedirs(STORAGE_DIR, exist_ok=True)
@@ -31,9 +33,11 @@ os.makedirs(STORAGE_REPORTS_DIR, exist_ok=True)
 os.makedirs(STORAGE_LOGS_DIR, exist_ok=True)
 os.makedirs(TEMPLATES_DIR, exist_ok=True)
 os.makedirs(CHARTS_DIR, exist_ok=True)
+os.makedirs(SQL_DIR, exist_ok=True)
 
-# Archivo de persistencia de logs de peticiones
+# Archivo de persistencia de logs de peticiones y SQL
 REQUESTS_LOG_PATH = STORAGE_LOGS_DIR / "demandmind_requests.log"
+SCHEMA_SQL_PATH = SQL_DIR / "schema.sql"
 
 
 class Settings(BaseSettings):
@@ -56,7 +60,31 @@ class Settings(BaseSettings):
     smtp_password: str = ""
     alert_sender_email: str = "security-alert@aigateway.local"
     alert_recipient_email: str = ""
-    alert_min_severity: str = "LOW"  # LOW | MEDIUM | HIGH
+    alert_min_severity: str = "LOW"  # LOW | MEDIUM | HIGH | CRITICAL
+
+    # ==========================================================================
+    # Switches de Infraestructura: AWS S3 vs Almacenamiento Local
+    # ==========================================================================
+    use_aws_s3: bool = False
+    aws_region: str = "us-east-1"
+    aws_access_key_id: str = ""
+    aws_secret_access_key: str = ""
+    aws_s3_bucket_name: str = "demandmind-charts"
+    aws_s3_custom_endpoint: str = ""
+
+    # ==========================================================================
+    # Switches de Infraestructura: PostgreSQL AWS RDS vs Local (DBeaver/Docker)
+    # ==========================================================================
+    use_aws_rds: bool = False
+    local_database_url: str = "postgresql+asyncpg://postgres:postgres@localhost:5432/demandmind_db"
+    aws_rds_database_url: str = "postgresql+asyncpg://postgres:password_rds@demandmind-db.xyz.us-east-1.rds.amazonaws.com:5432/demandmind_db"
+
+    @property
+    def active_database_url(self) -> str:
+        """Determina dinámicamente la URL de conexión activa según use_aws_rds."""
+        if self.use_aws_rds and self.aws_rds_database_url:
+            return self.aws_rds_database_url
+        return self.local_database_url
 
     model_config = SettingsConfigDict(
         env_file=str(BASE_DIR / ".env"),
@@ -83,3 +111,7 @@ LLM_ANALYZE = settings.llm_analyze
 GEMINI_API_KEY = settings.gemini_api_key.strip()
 GEMINI_MODEL = settings.gemini_model.strip()
 HAS_GEMINI_KEY = bool(GEMINI_API_KEY)
+
+USE_AWS_S3 = settings.use_aws_s3
+USE_AWS_RDS = settings.use_aws_rds
+ACTIVE_DATABASE_URL = settings.active_database_url

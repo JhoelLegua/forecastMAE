@@ -189,4 +189,6 @@ class HealthResponse(BaseModel):
     llm_multimodal_active: bool = Field(description="Indica si existe API key activa de Gemini Vision")
     llm_model: str = Field(description="Identificador del modelo LLM o motor heurístico activo")
     smtp_enabled: bool = Field(default=False, description="Estado de notificaciones Brevo SMTP")
+    use_aws_s3: bool = Field(default=False, description="Indica si el almacenamiento de gráficos está en AWS S3")
+    use_aws_rds: bool = Field(default=False, description="Indica si la base de datos apunta a PostgreSQL en AWS RDS")
     scalar_docs_url: str = Field(description="Ruta de acceso a la documentación interactiva en Scalar")

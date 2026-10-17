@@ -2,14 +2,15 @@
 Demand Prediction Routes.
 Exposes endpoints for individual machine learning models, the best model (LightGBM),
 and multi-model comparative predictions with automated chart rendering,
-storage persistence, optional LLM decision analysis (controlled via LLM_ANALYZE),
+storage persistence (AWS S3 vs Local), database persistence (PostgreSQL RDS vs Local),
+optional LLM decision analysis (controlled via LLM_ANALYZE),
 and automated Brevo SMTP alerts for demand spikes or operational incidents.
 """
 
 import time
 import traceback
 from typing import Optional
-from fastapi import APIRouter, HTTPException, BackgroundTasks
+from fastapi import APIRouter, HTTPException, BackgroundTasks, Request
 import numpy as np
 
 from app.schemas import (
@@ -32,7 +33,8 @@ router = APIRouter(prefix="/predict", tags=["Demand Forecasting"])
 def process_single_prediction(
     model_name: str,
     payload: ProductPredictionInput,
-    background_tasks: Optional[BackgroundTasks] = None
+    background_tasks: Optional[BackgroundTasks] = None,
+    request: Optional[Request] = None
 ) -> PredictionResponse:
     """Función unificada para procesar predicción individual, generar gráfico, persistir y consultar LLM."""
     start_time = time.time()
@@ -77,8 +79,10 @@ def process_single_prediction(
         )
 
         elapsed_ms = (time.time() - start_time) * 1000.0
+        req_id = getattr(request.state, "request_id", None) if request else None
+        client_ip = request.client.host if (request and request.client) else None
 
-        # 6. Persistencia obligatoria en storage local (storage/reports/ y storage/charts/)
+        # 6. Persistencia (AWS S3 vs Local y PostgreSQL RDS vs Local)
         persisted_report = save_prediction_report(
             report_type="single",
             model_used=model_name.replace("_", " ").title(),
@@ -88,7 +92,9 @@ def process_single_prediction(
             llm_provider=llm_provider,
             chart_source_path=file_path,
             chart_base64=b64_str,
-            execution_time_ms=elapsed_ms
+            execution_time_ms=elapsed_ms,
+            request_id=req_id,
+            client_ip=client_ip
         )
 
         # 7. Disparo automático de alerta en segundo plano si hay demanda excepcional
@@ -104,7 +110,8 @@ def process_single_prediction(
                     "SKU Category": category,
                     "Model": model_name,
                     "Proyección": f"{pred_units:.1f} u/mes",
-                    "Mediana Sector": f"{p50} u/mes"
+                    "Mediana Sector": f"{p50} u/mes",
+                    "Storage Backend": persisted_report.get("storage_backend", "LOCAL")
                 }
             )
 
@@ -140,46 +147,46 @@ def process_single_prediction(
 
 
 @router.post("/lightgbm", response_model=PredictionResponse, summary="Predict via LightGBM (Recommended Model)")
-async def predict_lightgbm(payload: ProductPredictionInput, background_tasks: BackgroundTasks):
+async def predict_lightgbm(payload: ProductPredictionInput, background_tasks: BackgroundTasks, request: Request):
     """Estima la demanda mensual empleando LightGBM (R² = 0.9311 en pruebas)."""
-    return process_single_prediction("lightgbm", payload, background_tasks)
+    return process_single_prediction("lightgbm", payload, background_tasks, request)
 
 
 @router.post("/best", response_model=PredictionResponse, summary="Predict via Best Model (LightGBM)")
-async def predict_best(payload: ProductPredictionInput, background_tasks: BackgroundTasks):
+async def predict_best(payload: ProductPredictionInput, background_tasks: BackgroundTasks, request: Request):
     """Alias automático que ejecuta el modelo con mejor precisión y confiabilidad validada."""
-    return process_single_prediction("lightgbm", payload, background_tasks)
+    return process_single_prediction("lightgbm", payload, background_tasks, request)
 
 
 @router.post("/random-forest", response_model=PredictionResponse, summary="Predict via Random Forest")
-async def predict_random_forest(payload: ProductPredictionInput, background_tasks: BackgroundTasks):
+async def predict_random_forest(payload: ProductPredictionInput, background_tasks: BackgroundTasks, request: Request):
     """Estima la demanda mensual empleando ensamble Random Forest de 150 árboles."""
-    return process_single_prediction("random_forest", payload, background_tasks)
+    return process_single_prediction("random_forest", payload, background_tasks, request)
 
 
 @router.post("/xgboost", response_model=PredictionResponse, summary="Predict via XGBoost")
-async def predict_xgboost(payload: ProductPredictionInput, background_tasks: BackgroundTasks):
+async def predict_xgboost(payload: ProductPredictionInput, background_tasks: BackgroundTasks, request: Request):
     """Estima la demanda mensual empleando Gradient Boosting optimizado con XGBoost."""
-    return process_single_prediction("xgboost", payload, background_tasks)
+    return process_single_prediction("xgboost", payload, background_tasks, request)
 
 
 @router.post("/decision-tree", response_model=PredictionResponse, summary="Predict via Decision Tree")
-async def predict_decision_tree(payload: ProductPredictionInput, background_tasks: BackgroundTasks):
+async def predict_decision_tree(payload: ProductPredictionInput, background_tasks: BackgroundTasks, request: Request):
     """Estima la demanda mensual empleando Árbol de Decisión no paramétrico."""
-    return process_single_prediction("decision_tree", payload, background_tasks)
+    return process_single_prediction("decision_tree", payload, background_tasks, request)
 
 
 @router.post("/ridge", response_model=PredictionResponse, summary="Predict via Ridge Regression")
-async def predict_ridge(payload: ProductPredictionInput, background_tasks: BackgroundTasks):
+async def predict_ridge(payload: ProductPredictionInput, background_tasks: BackgroundTasks, request: Request):
     """Estima la demanda mensual empleando Regresión Lineal Regularizada L2 (Ridge)."""
-    return process_single_prediction("ridge", payload, background_tasks)
+    return process_single_prediction("ridge", payload, background_tasks, request)
 
 
 @router.post("/all", response_model=MultiModelPredictionResponse, summary="Predict with all 5 models in consensus")
-async def predict_all_models(payload: ProductPredictionInput, background_tasks: BackgroundTasks):
+async def predict_all_models(payload: ProductPredictionInput, background_tasks: BackgroundTasks, request: Request):
     """
     Ejecuta la predicción en los 5 modelos simultáneamente, genera un gráfico comparativo de consenso,
-    persiste el reporte en storage y evalúa la dispersión de pronósticos mediante el LLM (si LLM_ANALYZE=true).
+    persiste el reporte en storage (S3 o Local) y BD (RDS o Local), y evalúa con LLM (si LLM_ANALYZE=true).
     """
     start_time = time.time()
     try:
@@ -221,8 +228,10 @@ async def predict_all_models(payload: ProductPredictionInput, background_tasks: 
         )
 
         elapsed_ms = (time.time() - start_time) * 1000.0
+        req_id = getattr(request.state, "request_id", None) if request else None
+        client_ip = request.client.host if (request and request.client) else None
 
-        # Persistir en storage local
+        # Persistir en storage (AWS S3 vs Local) y BD
         persisted_report = save_prediction_report(
             report_type="multi",
             model_used="Ensemble Consensus (5 Models)",
@@ -232,7 +241,9 @@ async def predict_all_models(payload: ProductPredictionInput, background_tasks: 
             llm_provider=llm_provider,
             chart_source_path=file_path,
             chart_base64=b64_str,
-            execution_time_ms=elapsed_ms
+            execution_time_ms=elapsed_ms,
+            request_id=req_id,
+            client_ip=client_ip
         )
 
         return MultiModelPredictionResponse(

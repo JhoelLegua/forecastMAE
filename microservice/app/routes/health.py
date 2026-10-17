@@ -25,11 +25,13 @@ async def get_health_status():
     return HealthResponse(
         status="operational",
         service_name="DemandMind Retail Demand Forecasting Microservice",
-        version="1.2.0",
+        version="1.3.0",
         models_loaded=model_service.get_loaded_models(),
         llm_analyze_enabled=LLM_ANALYZE,
         llm_multimodal_active=HAS_GEMINI_KEY and LLM_ANALYZE,
         llm_model=llm_desc,
         smtp_enabled=settings.smtp_enabled,
+        use_aws_s3=settings.use_aws_s3,
+        use_aws_rds=settings.use_aws_rds,
         scalar_docs_url="/docs"
     )

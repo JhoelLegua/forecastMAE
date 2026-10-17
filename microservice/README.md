@@ -1,6 +1,6 @@
 # DemandMind Microservice: Demand Forecasting & Multimodal AI Intelligence
 
-Microservicio empresarial desarrollado con **FastAPI** y documentado con la interfaz interactiva moderna **Scalar API Reference**, diseñado para estimar demanda mensual de productos en Amazon, generar gráficos de benchmarking persistentes, interpretar escenarios mediante **LLM Multimodal (Google Gemini Vision)**, persistir el flujo de peticiones en disco y emitir alertas operativas vía **Brevo SMTP Relay**.
+Microservicio empresarial desarrollado con **FastAPI** y documentado con la interfaz interactiva moderna **Scalar API Reference**, diseñado para estimar demanda mensual de productos en Amazon, generar gráficos de benchmarking persistentes, interpretar escenarios mediante **LLM Multimodal (Google Gemini Vision)**, persistir el flujo de peticiones en disco, emitir alertas operativas vía **Brevo SMTP Relay**, y operar con **infraestructura dual conmutable entre la Nube (AWS S3 y AWS RDS) y Entorno Local (Storage y PostgreSQL local con DBeaver)**.
 
 ---
 
@@ -10,14 +10,16 @@ Microservicio empresarial desarrollado con **FastAPI** y documentado con la inte
 microservice/
 ├── app/
 │   ├── __init__.py
-│   ├── main.py                  # FastAPI, middlewares de trazabilidad de logs, Scalar docs y routers
-│   ├── config.py                # Pydantic Settings, variables (.env), control LLM y Brevo SMTP
+│   ├── main.py                  # FastAPI, lifespan, middlewares de logs, Scalar docs y routers
+│   ├── config.py                # Pydantic Settings, switches S3/RDS y variables (.env)
+│   ├── database.py              # Conexión SQLAlchemy Async (asyncpg), pooling y modelos ORM
 │   ├── schemas.py               # Modelos Pydantic con payloads y schemas de salida
 │   ├── services/
 │   │   ├── __init__.py
 │   │   ├── model_service.py     # Carga y ejecución de modelos .joblib y benchmarks
 │   │   ├── chart_service.py     # Generación de gráficos ejecutivos de benchmarking
-│   │   ├── storage_service.py   # Persistencia local de reportes JSON y gráficos PNG
+│   │   ├── s3_service.py        # Subida asíncrona de gráficos a AWS S3 y generación de URLs
+│   │   ├── storage_service.py   # Persistencia dual (S3/Local) y registro en PostgreSQL/JSON
 │   │   ├── logger_service.py    # Persistencia de logs de peticiones y fallas en disco
 │   │   ├── email_notifier.py    # Servicio de alertas y notificaciones vía Brevo SMTP Relay
 │   │   └── llm_service.py       # Análisis de decisiones con Google Gemini Vision (o desactivado)
@@ -28,7 +30,9 @@ microservice/
 │       ├── health.py            # Endpoints /health y /status
 │       ├── prediction.py        # Endpoints /predict/* con BackgroundTasks
 │       ├── reports.py           # Endpoints /reports/{id} y /reports/{id}/json
-│       └── notifications.py    # Endpoints /notifications/test, /status, /alert y /logs
+│       └── notifications.py    # Endpoints /notifications/* (alertas, status, logs y CRUD destinatarios)
+├── sql/
+│   └── schema.sql               # Script DDL oficial para crear las tablas en PostgreSQL (DBeaver / RDS)
 ├── storage/
 │   ├── charts/                  # Archivos PNG persistidos de cada predicción
 │   ├── reports/                 # Archivos JSON con metadata y datos de cada predicción
@@ -44,20 +48,57 @@ microservice/
 
 ---
 
-## 2. Framework y Documentación Interactiva (Scalar)
+## 2. Infraestructura Dual: Cloud (AWS) vs Local
 
-El microservicio utiliza **Scalar API Reference** (`scalar-fastapi`) como sustituto interactivo moderno de Swagger UI y ReDoc.
+El microservicio desacopla el almacenamiento y la base de datos a través de dos variables de entorno booleanas:
 
-- **URL de Documentación Scalar**: `http://localhost:8000/docs`
-- **Características de Scalar**:
-  - Interfaz moderna oscura/clara con tema `moon`.
-  - Prueba de endpoints interactiva ("Test Request") con **payloads precargados por defecto**.
-  - Generador automático de fragmentos de código cliente en JavaScript, Python, cURL, Go, PHP, etc.
-  - Búsqueda instantánea y visualización completa de esquemas.
+```ini
+# ==============================================================================
+# 1. Almacenamiento de Gráficos (AWS S3 vs Local)
+# ==============================================================================
+USE_AWS_S3=false
+AWS_REGION="us-east-1"
+AWS_ACCESS_KEY_ID=""
+AWS_SECRET_ACCESS_KEY=""
+AWS_S3_BUCKET_NAME="demandmind-charts"
+AWS_S3_CUSTOM_ENDPOINT=""
+
+# ==============================================================================
+# 2. Base de Datos Relacional (AWS RDS vs Local PostgreSQL)
+# ==============================================================================
+USE_AWS_RDS=false
+LOCAL_DATABASE_URL="postgresql+asyncpg://postgres:postgres@localhost:5432/demandmind_db"
+AWS_RDS_DATABASE_URL="postgresql+asyncpg://postgres:tu_password_rds@demandmind-db.xyz.us-east-1.rds.amazonaws.com:5432/demandmind_db"
+```
+
+### Comportamiento del Almacenamiento (`USE_AWS_S3`):
+* **`USE_AWS_S3=true`**: El gráfico generado se sube directamente a tu Bucket de **AWS S3** usando `boto3`. El reporte y la API retornan el enlace público HTTPS directo (ej. `https://demandmind-charts.s3.amazonaws.com/charts/rep_123.png`).
+* **`USE_AWS_S3=false`**: El gráfico se almacena localmente en `storage/charts/rep_123.png` y se expone a través de la ruta `/storage/charts/rep_123.png`.
+
+### Comportamiento de la Base de Datos (`USE_AWS_RDS`):
+* **`USE_AWS_RDS=true`**: Conecta a la instancia administrada de PostgreSQL en **AWS RDS**.
+* **`USE_AWS_RDS=false`**: Conecta a tu servidor PostgreSQL local (Docker o servicio de Windows que puedes administrar desde **DBeaver**).
+* **Aislamiento y Resiliencia**:
+  - **No se persiste Base64 en la base de datos**: Para evitar saturar las tablas y degradar el buffer pool, únicamente se guarda la URL del gráfico (`chart_url`).
+  - Si la base de datos no está levantada o falla la conexión, el microservicio **nunca se cae**; emite una advertencia en el log y continúa operando de forma transparente con persistencia en documentos JSON locales (`storage/reports/`).
 
 ---
 
-## 3. Control de Análisis LLM (`LLM_ANALYZE`)
+## 3. Despliegue de la Base de Datos con DBeaver (`sql/schema.sql`)
+
+En [`microservice/sql/schema.sql`](file:///d:/MAE/MAE/MOD%20VI/DemandMind/microservice/sql/schema.sql) se encuentra el script DDL completo listo para ejecutar en **DBeaver**:
+
+1. Abre **DBeaver** y conéctate a tu base de datos PostgreSQL local (`localhost:5432`) o a tu instancia de **AWS RDS**.
+2. Abre un editor SQL (`Ctrl + ]`).
+3. Pega y ejecuta el contenido de [`schema.sql`](file:///d:/MAE/MAE/MOD%20VI/DemandMind/microservice/sql/schema.sql).
+4. El script creará automáticamente:
+   * **`prediction_requests`**: Registro histórico de cada inferencia con parámetros en JSONB, demanda estimada, KPIs y URL del gráfico.
+   * **`notification_recipients`**: Destinatarios dinámicos para las alertas de correo, con roles y niveles de severidad configurables.
+   * **`email_audit_logs`**: Trazabilidad y auditoría de alertas despachadas.
+
+---
+
+## 4. Control de Análisis LLM (`LLM_ANALYZE`)
 
 En el archivo `.env` se define el interruptor maestro del LLM:
 
@@ -67,100 +108,50 @@ En el archivo `.env` se define el interruptor maestro del LLM:
 LLM_ANALYZE=true
 ```
 
-### Comportamiento según el estado:
-* **`LLM_ANALYZE=true`**:
-  - El gráfico generado y las métricas se envían a **Google Gemini Multimodal Vision** (o al motor heurístico si no hay API key).
-  - La respuesta incluye la sección ejecutiva obligatoria de 4 puntos (explicación en lenguaje no técnico, diagnóstico cuantitativo, análisis de drivers y plan de acción operativo).
-  - La vista web `/reports/{report_id}` y el PDF desplegarán el informe explicativo completo.
-* **`LLM_ANALYZE=false`**:
-  - No se realiza ninguna llamada de red al LLM ni se genera texto explicativo (`ai_decision_analysis` queda vacío y `llm_provider` indica `"Desactivado (LLM_ANALYZE=False)"`).
-  - La respuesta y la generación del reporte es ultra rápida (~300 ms).
-  - En la vista HTML y en el PDF, la sección de explicación de IA se omite automáticamente, mostrando de manera limpia los KPIs de salida, gráfico de benchmarking, datos de entrada y auditoría técnica.
+* **`LLM_ANALYZE=true`**: Se envía el gráfico a **Google Gemini Vision** para generar la explicación ejecutiva de 4 secciones.
+* **`LLM_ANALYZE=false`**: Se omite el envío de la imagen. La inferencia es ultra rápida (~300 ms) y en el reporte web / PDF la sección explicativa se oculta limpiamente.
 
 ---
 
-## 4. Persistencia de Logs del Flujo de Peticiones
-
-El microservicio incluye un middleware HTTP global que registra persistentemente cada petición recibida:
+## 5. Trazabilidad de Peticiones y Persistencia de Logs
 
 - **Archivo de log persistente**: `microservice/storage/logs/demandmind_requests.log`
-- **Rotación automática**: Archivos de hasta 10 MB con histórico rotativo de 5 respaldos.
-- **Formato del registro**:
+- **Rotación automática**: Archivos de hasta 10 MB con 5 respaldos rotativos.
+- **Formato**:
   ```text
-  [2026-10-17 18:08:39] [INFO] [REQ:req_e329f9d6] Client:127.0.0.1 | GET /health | Status:200 (OK) | Latency:1.0ms
-  [2026-10-17 18:08:58] [INFO] [REQ:req_437cf3b6] Client:127.0.0.1 | POST /predict/best | Status:200 (OK) | Latency:19052.4ms
-  [2026-10-17 18:09:21] [INFO] [REQ:req_ec910c87] Client:127.0.0.1 | POST /predict/best | Status:200 (OK) | Latency:394.0ms
+  [2026-10-17 18:08:58] [INFO] [REQ:req_437cf3b6] Client:127.0.0.1 | POST /predict/best | Status:200 (OK) | Latency:3042.1ms
   ```
-- **Auditoría ante fallas (Status 500 / Excepciones)**:
-  - En caso de error no controlado, se captura la traza completa (traceback), se persiste en el log y se asocia al `Request-ID` para diagnóstico inmediato.
-  - Además, se dispara automáticamente una alerta de alta severidad vía Brevo SMTP al equipo administrador.
-- **Consulta vía API**:
-  - `GET /notifications/logs?limit=50`: Permite inspeccionar las últimas N líneas del archivo persistente directamente desde Scalar o navegador.
-
----
-
-## 5. Servicio de Notificaciones y Alertas Brevo SMTP
-
-El microservicio incorpora un cliente SMTP no bloqueante optimizado para **Brevo SMTP Relay** con soporte de `STARTTLS` sobre el puerto 587.
-
-### 5.1. Variables en `.env`
-```ini
-SMTP_ENABLED=True
-SMTP_HOST="smtp-relay.brevo.com"
-SMTP_PORT=587
-SMTP_USER="8061d7001@smtp-brevo.com"
-SMTP_PASSWORD="xsmtpsib-tu-clave-aqui"
-ALERT_SENDER_EMAIL="leguajhoel@gmail.com"
-ALERT_RECIPIENT_EMAIL="leguajhoel@gmail.com"
-ALERT_MIN_SEVERITY="LOW" # LOW | MEDIUM | HIGH | CRITICAL
-```
-
-### 5.2. Arquitectura de Despacho (`email_notifier.py`)
-- **No bloqueante**: Utiliza `asyncio.to_thread` y `FastAPI BackgroundTasks` para asegurar que el despacho del correo nunca agregue latencia a la respuesta HTTP del cliente.
-- **Aislamiento de fallos**: Los errores de red SMTP son capturados y registrados; nunca provocan la caída del servicio.
-- **Filtrado por severidad**: Compara la severidad del evento contra `ALERT_MIN_SEVERITY` (`LOW` = 0, `MEDIUM` = 1, `HIGH` = 2, `CRITICAL` = 3).
-- **Plantilla HTML ejecutiva**: Genera correos formateados con encabezado corporativo DemandMind, distintivo de severidad en colores, diagnóstico, tabla contextual y Request ID.
-
-### 5.3. Casos de Activación Automática:
-1. **Fallas críticas (500 Internal Server Error)**: `system_failure` (Severidad HIGH).
-2. **Errores de inferencia en modelos**: `prediction_error` (Severidad HIGH).
-3. **Picos de demanda atípicos**: `extreme_demand_spike` (Severidad MEDIUM) cuando la demanda estimada supera 1,000 unidades o +300% de la mediana del sector.
-4. **Prueba de relay manual**: `test_alert` (Severidad LOW) para comprobar entrega.
+- **Auditoría ante errores 500**: Almacena el `traceback` completo y dispara una alerta `system_failure` vía Brevo SMTP.
 
 ---
 
 ## 6. Endpoints Disponibles
 
-### Diagnóstico y Salud
-- `GET /health`: Estado del servicio, modelos en memoria, estado de `LLM_ANALYZE` y SMTP.
-- `GET /status`: Alias de monitoreo operacional.
-- `GET /docs`: Documentación interactiva en **Scalar**.
+### Diagnóstico, Salud e Infraestructura
+* `GET /health`: Estado del microservicio, modelos cargados, estado de `LLM_ANALYZE`, `USE_AWS_S3` y `USE_AWS_RDS`.
+* `GET /notifications/status`: Diagnóstico detallado con estado del relay Brevo SMTP, prueba de bucket S3 y conexión a PostgreSQL (RDS / Local).
+* `GET /docs`: Documentación interactiva en **Scalar**.
 
 ### Pronósticos de Demanda
-- `POST /predict/lightgbm`: Inferencia con **LightGBM** (Modelo líder, $R^2 = 0.9311$).
-- `POST /predict/best`: Alias directo al mejor modelo evaluado.
-- `POST /predict/random-forest`: Inferencia con **Random Forest** (Menor MAPE: 23.88%).
-- `POST /predict/xgboost`: Inferencia con **XGBoost** (Gradient Boosting optimizado).
-- `POST /predict/decision-tree`: Inferencia con **Árbol de Decisión**.
-- `POST /predict/ridge`: Inferencia con **Regresión Ridge** ($L_2$).
-- `POST /predict/all`: Ejecuta los 5 modelos en simultáneo, grafica consenso y reporta en storage.
+* `POST /predict/lightgbm`: Inferencia con **LightGBM** (Modelo líder, $R^2 = 0.9311$).
+* `POST /predict/best`: Alias directo al mejor modelo evaluado.
+* `POST /predict/random-forest`: Inferencia con **Random Forest** (Menor MAPE: 23.88%).
+* `POST /predict/xgboost`: Inferencia con **XGBoost** (Gradient Boosting optimizado).
+* `POST /predict/decision-tree`: Inferencia con **Árbol de Decisión**.
+* `POST /predict/ridge`: Inferencia con **Regresión Ridge** ($L_2$).
+* `POST /predict/all`: Ejecuta los 5 modelos simultáneamente y grafica consenso.
 
-### Alertas y Notificaciones Brevo SMTP
-- `GET /notifications/status`: Estado de la configuración SMTP y ofuscación de credenciales.
-- `POST /notifications/test`: Disparo inmediato de correo de prueba para verificar relay.
-- `POST /notifications/alert`: Emisión de alerta en segundo plano con severidad y mensaje personalizado.
-- `GET /notifications/logs`: Lectura de los registros de peticiones persistidos.
+### Gestión Dinámica de Destinatarios de Alertas (PostgreSQL)
+* `GET /notifications/recipients`: Lista los destinatarios activos/inactivos configurados en la base de datos.
+* `POST /notifications/recipients`: Registra un nuevo destinatario (nombre, apellido, email, rol, severidad mínima).
+* `PATCH /notifications/recipients/{id}/toggle`: Activa o pausa la recepción de alertas sin borrar al usuario.
+* `DELETE /notifications/recipients/{id}`: Elimina un destinatario de la base de datos.
+* `POST /notifications/test`: Dispara un correo de prueba vía Brevo SMTP Relay.
+* `GET /notifications/logs`: Muestra las últimas líneas del log persistente.
 
-### Vistas Interactivas y Persistencia en Storage
-- `GET /reports/{report_id}`: Vista web ejecutiva interactiva que despliega:
-  - Reporte descriptivo de IA renderizado en Markdown (si `LLM_ANALYZE=true`).
-  - Gráfico de benchmarking de alta resolución.
-  - Data de entrada detallada (precios, ratings, insignias, logística).
-  - Data de salida (demanda proyectada, tier, benchmarks de sector).
-  - Metadatos de ejecución y auditoría técnica.
-  - Selector de Tema: **Modo Oscuro / Modo Claro** con transiciones suaves.
-  - **Exportación a PDF**: Descarga el reporte completo en formato A4 respetando el tema activo.
-- `GET /reports/{report_id}/json`: Recupera la estructura cruda persistida en `storage/reports/{report_id}.json`.
+### Vistas Interactivas y Persistencia
+* `GET /reports/{report_id}`: Vista web ejecutiva interactiva (Modo Oscuro / Claro y descarga PDF).
+* `GET /reports/{report_id}/json`: Metadata completa del reporte persistido.
 
 ---
 
@@ -168,15 +159,14 @@ ALERT_MIN_SEVERITY="LOW" # LOW | MEDIUM | HIGH | CRITICAL
 
 1. Activar el entorno virtual:
    ```bash
-   source .venv/Scripts/activate   # En Windows Git Bash
-   # o bien: .\.venv\Scripts\Activate.ps1 en PowerShell
+   source .venv/Scripts/activate
    ```
 
-2. Iniciar el servidor Uvicorn:
+2. Iniciar el servidor:
    ```bash
    python microservice/run.py
    ```
 
-3. Abrir en el navegador:
+3. Abrir la documentación interactiva:
    - **Scalar API Reference**: `http://localhost:8000/docs`
-   - **Verificación de Salud**: `http://localhost:8000/health`
+   - **Estado de Infraestructura**: `http://localhost:8000/notifications/status`

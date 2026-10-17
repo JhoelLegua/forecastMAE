@@ -10,6 +10,7 @@ import time
 import uuid
 import asyncio
 import traceback
+from contextlib import asynccontextmanager
 from fastapi import FastAPI, Request
 from fastapi.responses import RedirectResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
@@ -32,6 +33,22 @@ from app.services.logger_service import log_request_flow
 from app.services.email_notifier import send_alert_email
 
 
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    """Ciclo de vida del microservicio: verifica conectividad y tablas de base de datos."""
+    try:
+        from app.database import init_db_tables, check_database_connectivity
+        db_conn = await check_database_connectivity()
+        if db_conn["status"] == "connected":
+            await init_db_tables()
+            print(f"[DEMANDMIND] Connected to {db_conn['backend']} successfully. Tables verified.")
+        else:
+            print(f"[DEMANDMIND] Database offline ({db_conn['backend']}). Operating with local storage.")
+    except Exception as exc:
+        print(f"[DEMANDMIND] Database startup notice: {exc}")
+    yield
+
+
 app = FastAPI(
     title="DemandMind API - Retail Demand Forecasting & AI Intelligence",
     description="""
@@ -42,14 +59,17 @@ app = FastAPI(
     * **Modelos Supervisados:** LightGBM, Random Forest, XGBoost, Decision Tree y Ridge Regression.
     * **Control de Análisis LLM:** Flag configurable `LLM_ANALYZE = true/false` para activar/desactivar la interpretación del LLM.
     * **Trazabilidad Persistente:** Flujo completo de peticiones registrado en `storage/logs/demandmind_requests.log`.
-    * **Servicio de Alertas Brevo SMTP:** Despacho asíncrono no bloqueante de alertas ante fallas, anomalías de demanda y eventos críticos.
-    * **Persistencia Local:** Activos gráficos y reportes almacenados en `storage/charts/` y `storage/reports/`.
+    * **Infraestructura Cloud vs Local:**
+      - **AWS S3:** Subida y enlaces públicos para gráficos vía `USE_AWS_S3 = true/false`.
+      - **PostgreSQL:** Persistencia estructurada (sin base64) en **AWS RDS** o **Local (DBeaver)** vía `USE_AWS_RDS = true/false`.
+    * **Servicio de Alertas Brevo SMTP:** Despacho asíncrono con destinatarios dinámicos desde PostgreSQL o `.env`.
     * **Vistas Interactivas:** Reporte web interactivo con selector de tema (Oscuro/Claro) y descarga de PDF respetando el estilo.
     * **Documentación Interactiva:** Renderizada con **Scalar API Reference** en `/docs`.
     """,
-    version="1.2.0",
+    version="1.3.0",
     docs_url=None,   # Desactiva Swagger UI por defecto para dar paso a Scalar
-    redoc_url=None  # Desactiva ReDoc por defecto
+    redoc_url=None,  # Desactiva ReDoc por defecto
+    lifespan=lifespan
 )
 
 # Configuración CORS para permitir consumo desde aplicaciones web y dashboards

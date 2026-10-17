@@ -37,18 +37,38 @@ _EVENT_SEVERITY = {
 }
 
 
-def _get_active_recipients(settings: Settings, override_recipient: Optional[str] = None) -> List[str]:
+async def _get_active_recipients(settings: Settings, override_recipient: Optional[str] = None) -> List[str]:
     """
     Resuelve los destinatarios activos para la alerta.
-    Prioriza override_recipient si se proporciona, luego settings.alert_recipient_email.
+    1. Si se proporciona override_recipient, se utiliza de forma directa.
+    2. Si la base de datos PostgreSQL tiene registros en notification_recipients activos (is_active=True),
+       se devuelven esos correos.
+    3. Si la base de datos está vacía o inaccesible, se utiliza settings.alert_recipient_email como fallback.
     """
-    recipients = []
     if override_recipient and override_recipient.strip():
-        recipients.append(override_recipient.strip())
-    elif settings.alert_recipient_email and settings.alert_recipient_email.strip():
-        recipients.append(settings.alert_recipient_email.strip())
+        return [override_recipient.strip()]
 
-    return recipients
+    # Consultar PostgreSQL (RDS / Local)
+    try:
+        from sqlalchemy import select
+        from app.database import get_session_factory, NotificationRecipient
+        factory = get_session_factory()
+        async with factory() as session:
+            result = await session.execute(
+                select(NotificationRecipient.email).where(
+                    NotificationRecipient.is_active.is_(True)
+                )
+            )
+            db_emails = [email.strip() for email in result.scalars().all() if email and email.strip()]
+            if db_emails:
+                return db_emails
+    except Exception as exc:
+        logger.debug("Could not query recipients from DB (fallback to settings email): %s", exc)
+
+    if settings.alert_recipient_email and settings.alert_recipient_email.strip():
+        return [settings.alert_recipient_email.strip()]
+
+    return []
 
 
 def _build_html_email(
@@ -221,8 +241,8 @@ async def send_alert_email(
         )
         return False
 
-    # 3. Resolución de destinatarios
-    recipients = _get_active_recipients(cfg, override_recipient)
+    # 3. Resolución dinámica de destinatarios (Base de Datos con fallback a .env)
+    recipients = await _get_active_recipients(cfg, override_recipient)
     if not recipients:
         logger.warning("No active recipient configured for SMTP alert. Notification aborted.")
         return False
