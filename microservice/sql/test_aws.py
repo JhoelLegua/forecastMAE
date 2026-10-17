@@ -35,9 +35,28 @@ async def test_and_init_aws():
     bucket = settings.aws_s3_bucket_name
     print(f"[S3] Verificando bucket '{bucket}' en región '{settings.aws_region}'...")
 
-    try:
         s3_client.head_bucket(Bucket=bucket)
         print(f"[S3 OK] El bucket '{bucket}' existe y es accesible con tus credenciales.")
+
+        # Asegurar política de lectura pública para las imágenes de los gráficos
+        try:
+            import json
+            policy = {
+                "Version": "2012-10-17",
+                "Statement": [
+                    {
+                        "Sid": "PublicReadForCharts",
+                        "Effect": "Allow",
+                        "Principal": "*",
+                        "Action": "s3:GetObject",
+                        "Resource": f"arn:aws:s3:::{bucket}/*"
+                    }
+                ]
+            }
+            s3_client.put_bucket_policy(Bucket=bucket, Policy=json.dumps(policy))
+            print(f"[S3 OK] Bucket Policy de lectura pública configurada para '{bucket}'.")
+        except Exception as pol_err:
+            print(f"[S3 NOTICE] No se pudo actualizar bucket policy: {pol_err}")
 
         # Subir un archivo de prueba (ej. un gráfico existente en plots/)
         test_file = Path("plots/flow_lightgbm.png")
