@@ -46,6 +46,7 @@ class Settings(BaseSettings):
     port: int = 8000
     debug: bool = True
     base_url: str = "http://localhost:8000"
+    public_base_url: str = ""  # URL pública opcional (ej: https://xxx.trycloudflare.com o dominio personalizado)
 
     # Control de Análisis de Inteligencia Artificial (LLM)
     llm_analyze: bool = True
@@ -115,3 +116,29 @@ HAS_GEMINI_KEY = bool(GEMINI_API_KEY)
 USE_AWS_S3 = settings.use_aws_s3
 USE_AWS_RDS = settings.use_aws_rds
 ACTIVE_DATABASE_URL = settings.active_database_url
+
+
+def resolve_base_url(request=None) -> str:
+    """
+    Resuelve la URL base pública adecuada para reportes y enlaces externos.
+    Soporta de forma automática y transparente:
+    1. Túneles Cloudflare (trycloudflare.com), ngrok o proxies inversos leyendo 'x-forwarded-host' y 'x-forwarded-proto'.
+    2. Variable explícita PUBLIC_BASE_URL en el archivo .env.
+    3. Fallback a BASE_URL (http://localhost:8000).
+    """
+    current_settings = get_settings()
+    if current_settings.public_base_url.strip():
+        return current_settings.public_base_url.strip().rstrip("/")
+
+    if request is not None:
+        try:
+            headers = getattr(request, "headers", {})
+            proto = headers.get("x-forwarded-proto") or getattr(request.url, "scheme", "http")
+            host = headers.get("x-forwarded-host") or headers.get("host") or getattr(request.url, "netloc", "")
+            if host:
+                return f"{proto}://{host}".rstrip("/")
+        except Exception:
+            pass
+
+    return current_settings.base_url.rstrip("/")
+

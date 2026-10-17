@@ -23,6 +23,7 @@ from app.services.chart_service import (
     generate_single_prediction_chart,
     generate_multi_model_chart
 )
+from app.config import resolve_base_url
 from app.services.llm_service import analyze_prediction_with_llm
 from app.services.storage_service import save_prediction_report
 from app.services.email_notifier import send_alert_email
@@ -83,6 +84,7 @@ def process_single_prediction(
         client_ip = request.client.host if (request and request.client) else None
 
         # 6. Persistencia (AWS S3 vs Local y PostgreSQL RDS vs Local)
+        effective_base = resolve_base_url(request)
         persisted_report = save_prediction_report(
             report_type="single",
             model_used=model_name.replace("_", " ").title(),
@@ -94,7 +96,8 @@ def process_single_prediction(
             chart_base64=b64_str,
             execution_time_ms=elapsed_ms,
             request_id=req_id,
-            client_ip=client_ip
+            client_ip=client_ip,
+            base_url_override=effective_base
         )
 
         # 7. Disparo automático de alerta en segundo plano si hay demanda excepcional
@@ -125,7 +128,6 @@ def process_single_prediction(
             category_median_demand=p50,
             relative_vs_category_pct=rel_diff_pct,
             chart_url=persisted_report["chart_url"],
-            chart_base64=b64_str,
             storage_chart_path=persisted_report["storage_chart_path"],
             ai_decision_analysis=ai_analysis,
             llm_provider=llm_provider
@@ -232,6 +234,7 @@ async def predict_all_models(payload: ProductPredictionInput, background_tasks: 
         client_ip = request.client.host if (request and request.client) else None
 
         # Persistir en storage (AWS S3 vs Local) y BD
+        effective_base = resolve_base_url(request)
         persisted_report = save_prediction_report(
             report_type="multi",
             model_used="Ensemble Consensus (5 Models)",
@@ -243,7 +246,8 @@ async def predict_all_models(payload: ProductPredictionInput, background_tasks: 
             chart_base64=b64_str,
             execution_time_ms=elapsed_ms,
             request_id=req_id,
-            client_ip=client_ip
+            client_ip=client_ip,
+            base_url_override=effective_base
         )
 
         return MultiModelPredictionResponse(
@@ -256,7 +260,6 @@ async def predict_all_models(payload: ProductPredictionInput, background_tasks: 
             category=category,
             category_median_demand=benchmarks.get("median", 100.0),
             chart_url=persisted_report["chart_url"],
-            chart_base64=b64_str,
             storage_chart_path=persisted_report["storage_chart_path"],
             ai_decision_analysis=ai_analysis,
             llm_provider=llm_provider

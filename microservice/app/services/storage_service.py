@@ -20,7 +20,8 @@ from app.config import (
     STORAGE_CHARTS_DIR,
     STORAGE_REPORTS_DIR,
     BASE_URL,
-    get_settings
+    get_settings,
+    resolve_base_url
 )
 from app.services.s3_service import _upload_file_blocking
 
@@ -82,14 +83,16 @@ def save_prediction_report(
     ai_decision_analysis: str,
     llm_provider: str,
     chart_source_path: str,
-    chart_base64: str,
+    chart_base64: str = "",
     execution_time_ms: float = 0.0,
     request_id: Optional[str] = None,
-    client_ip: Optional[str] = None
+    client_ip: Optional[str] = None,
+    base_url_override: Optional[str] = None
 ) -> Dict[str, Any]:
     """
     Persiste el reporte y su activo gráfico conmutando entre AWS S3 y almacenamiento Local.
     Inserta el registro en PostgreSQL (AWS RDS o Local) sin base64 y guarda copia JSON local.
+    Soporta URLs dinámicas de túneles (Cloudflare, ngrok) o configuraciones personalizadas.
     """
     settings = get_settings()
     report_id = f"rep_{uuid.uuid4().hex[:10]}"
@@ -121,7 +124,9 @@ def save_prediction_report(
         else:
             logger.warning("S3 upload failed. Falling back to local chart URL: %s", web_chart_url)
 
-    report_web_url = f"{BASE_URL}/reports/{report_id}"
+    # 3. Resolver la URL base dinámica (Túnel Cloudflare o Local)
+    effective_base = (base_url_override or resolve_base_url()).rstrip("/")
+    report_web_url = f"{effective_base}/reports/{report_id}"
     now_iso = datetime.now(timezone.utc).isoformat()
     now_formatted = datetime.now().strftime("%d/%m/%Y %H:%M:%S")
 
