@@ -107,6 +107,8 @@ _engine: Optional[AsyncEngine] = None
 _session_factory: Optional[async_sessionmaker[AsyncSession]] = None
 
 
+from sqlalchemy.pool import NullPool
+
 def get_engine() -> AsyncEngine:
     """Obtiene o inicializa de forma perezosa el motor SQLAlchemy asíncrono."""
     global _engine, _session_factory
@@ -119,9 +121,7 @@ def get_engine() -> AsyncEngine:
         _engine = create_async_engine(
             db_url,
             echo=False,
-            pool_size=10,
-            max_overflow=20,
-            pool_pre_ping=True
+            poolclass=NullPool
         )
         _session_factory = async_sessionmaker(
             bind=_engine,
