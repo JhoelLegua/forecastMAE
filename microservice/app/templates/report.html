@@ -1,0 +1,840 @@
+<!DOCTYPE html>
+<html lang="es" class="dark">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>DemandMind Reporte Ejecutivo | {{ report.report_id }}</title>
+  
+  <!-- Google Fonts -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+  
+  <!-- Marked.js para renderizar Markdown del LLM -->
+  <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+  
+  <!-- jsPDF + html2canvas para exportar PDF por bloques respetando el tema activo -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
+
+  <style>
+    :root {
+      --font-sans: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+      --font-mono: 'JetBrains Mono', monospace;
+      
+      /* Modo Oscuro (Default) */
+      --bg-body: #0b0f19;
+      --bg-card: #111827;
+      --bg-card-subtle: #1e293b;
+      --bg-header: rgba(17, 24, 39, 0.85);
+      --border-color: #334155;
+      --border-accent: #3b82f6;
+      --text-main: #f8fafc;
+      --text-muted: #94a3b8;
+      --text-dim: #64748b;
+      --accent-primary: #3b82f6;
+      --accent-cyan: #06b6d4;
+      --accent-emerald: #10b981;
+      --accent-amber: #f59e0b;
+      --accent-rose: #f43f5e;
+      --badge-bg: rgba(59, 130, 246, 0.15);
+      --badge-text: #60a5fa;
+      --shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.5), 0 8px 10px -6px rgba(0, 0, 0, 0.5);
+    }
+
+    html.light {
+      --bg-body: #f8fafc;
+      --bg-card: #ffffff;
+      --bg-card-subtle: #f1f5f9;
+      --bg-header: rgba(255, 255, 255, 0.85);
+      --border-color: #e2e8f0;
+      --border-accent: #2563eb;
+      --text-main: #0f172a;
+      --text-muted: #475569;
+      --text-dim: #64748b;
+      --accent-primary: #2563eb;
+      --accent-cyan: #0891b2;
+      --accent-emerald: #059669;
+      --accent-amber: #d97706;
+      --accent-rose: #e11d48;
+      --badge-bg: #eff6ff;
+      --badge-text: #1d4ed8;
+      --shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.08), 0 2px 4px -2px rgba(0, 0, 0, 0.05);
+    }
+
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+    }
+
+    body {
+      font-family: var(--font-sans);
+      background-color: var(--bg-body);
+      color: var(--text-main);
+      line-height: 1.6;
+      transition: background-color 0.25s ease, color 0.25s ease;
+      min-height: 100vh;
+      padding-bottom: 4rem;
+    }
+
+    /* Barra Superior */
+    .header-bar {
+      position: sticky;
+      top: 0;
+      z-index: 50;
+      backdrop-filter: blur(12px);
+      background-color: var(--bg-header);
+      border-bottom: 1px solid var(--border-color);
+      padding: 0.85rem 1.5rem;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+
+    .brand-section {
+      display: flex;
+      align-items: center;
+      gap: 0.85rem;
+    }
+
+    .brand-logo {
+      font-size: 1.25rem;
+      font-weight: 800;
+      letter-spacing: -0.03em;
+      background: linear-gradient(135deg, #38bdf8 0%, #3b82f6 50%, #818cf8 100%);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+    }
+
+    .badge-pill {
+      font-size: 0.75rem;
+      font-weight: 600;
+      padding: 0.2rem 0.6rem;
+      border-radius: 9999px;
+      background-color: var(--badge-bg);
+      color: var(--badge-text);
+      border: 1px solid rgba(59, 130, 246, 0.3);
+      display: inline-flex;
+      align-items: center;
+      gap: 0.35rem;
+    }
+
+    .controls-group {
+      display: flex;
+      align-items: center;
+      gap: 0.6rem;
+    }
+
+    .btn {
+      font-family: var(--font-sans);
+      font-size: 0.825rem;
+      font-weight: 600;
+      padding: 0.45rem 0.85rem;
+      border-radius: 0.5rem;
+      cursor: pointer;
+      display: inline-flex;
+      align-items: center;
+      gap: 0.45rem;
+      transition: all 0.2s ease;
+      text-decoration: none;
+      border: 1px solid var(--border-color);
+      background-color: var(--bg-card);
+      color: var(--text-main);
+    }
+
+    .btn:hover {
+      background-color: var(--bg-card-subtle);
+      border-color: var(--text-dim);
+    }
+
+    .btn-primary {
+      background: linear-gradient(135deg, #2563eb, #1d4ed8);
+      color: #ffffff;
+      border: none;
+      box-shadow: 0 2px 8px rgba(37, 99, 235, 0.35);
+    }
+
+    .btn-primary:hover {
+      background: linear-gradient(135deg, #1d4ed8, #1e40af);
+      color: #ffffff;
+    }
+
+    /* Contenedor Principal */
+    .container {
+      max-width: 1200px;
+      margin: 2rem auto;
+      padding: 0 1.5rem;
+    }
+
+    /* Tarjetas y Layout */
+    .report-card {
+      background-color: var(--bg-card);
+      border: 1px solid var(--border-color);
+      border-radius: 1rem;
+      padding: 1.5rem;
+      margin-bottom: 1.5rem;
+      box-shadow: var(--shadow);
+    }
+
+    .card-title {
+      font-size: 1.15rem;
+      font-weight: 700;
+      margin-bottom: 1rem;
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+      color: var(--text-main);
+    }
+
+    /* Grid de Salida / KPIs */
+    .kpi-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+      gap: 1rem;
+      margin-bottom: 1.5rem;
+    }
+
+    .kpi-card {
+      background-color: var(--bg-card);
+      border: 1px solid var(--border-color);
+      border-radius: 0.85rem;
+      padding: 1.25rem;
+      position: relative;
+      overflow: hidden;
+      box-shadow: var(--shadow);
+    }
+
+    .kpi-card::before {
+      content: '';
+      position: absolute;
+      top: 0;
+      left: 0;
+      width: 4px;
+      height: 100%;
+      background: var(--accent-primary);
+    }
+
+    .kpi-card.emerald::before { background: var(--accent-emerald); }
+    .kpi-card.amber::before { background: var(--accent-amber); }
+    .kpi-card.cyan::before { background: var(--accent-cyan); }
+
+    .kpi-label {
+      font-size: 0.775rem;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      color: var(--text-muted);
+      margin-bottom: 0.35rem;
+    }
+
+    .kpi-value {
+      font-size: 2.2rem;
+      font-weight: 800;
+      letter-spacing: -0.03em;
+      color: var(--text-main);
+      display: flex;
+      align-items: baseline;
+      gap: 0.35rem;
+    }
+
+    .kpi-unit {
+      font-size: 0.9rem;
+      font-weight: 500;
+      color: var(--text-muted);
+    }
+
+    .kpi-sub {
+      font-size: 0.825rem;
+      font-weight: 500;
+      color: var(--text-muted);
+      margin-top: 0.25rem;
+    }
+
+    /* Gráfico */
+    .chart-wrapper {
+      text-align: center;
+      padding: 0.5rem;
+    }
+
+    .chart-image {
+      max-width: 100%;
+      height: auto;
+      border-radius: 0.75rem;
+      border: 1px solid var(--border-color);
+      box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+      transition: transform 0.2s ease;
+    }
+
+    /* Markdown del LLM */
+    .markdown-content {
+      color: var(--text-main);
+      font-size: 0.95rem;
+      line-height: 1.7;
+    }
+
+    .markdown-content h1, .markdown-content h2, .markdown-content h3 {
+      color: var(--text-main);
+      margin-top: 1.4rem;
+      margin-bottom: 0.6rem;
+      font-weight: 700;
+      letter-spacing: -0.02em;
+    }
+
+    .markdown-content h3 {
+      font-size: 1.1rem;
+      border-bottom: 1px solid var(--border-color);
+      padding-bottom: 0.4rem;
+    }
+
+    .markdown-content p {
+      margin-bottom: 0.85rem;
+    }
+
+    .markdown-content ul, .markdown-content ol {
+      margin-left: 1.4rem;
+      margin-bottom: 1rem;
+    }
+
+    .markdown-content li {
+      margin-bottom: 0.35rem;
+    }
+
+    .markdown-content blockquote {
+      border-left: 4px solid var(--accent-primary);
+      padding: 0.5rem 1rem;
+      margin: 1rem 0;
+      background-color: var(--bg-card-subtle);
+      border-radius: 0 0.5rem 0.5rem 0;
+      font-style: italic;
+      color: var(--text-muted);
+    }
+
+    /* Tabla de Entrada / Atributos */
+    .input-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(250px, 1fr));
+      gap: 0.85rem;
+    }
+
+    .param-box {
+      background-color: var(--bg-card-subtle);
+      border: 1px solid var(--border-color);
+      border-radius: 0.5rem;
+      padding: 0.75rem 1rem;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+
+    .param-name {
+      font-size: 0.825rem;
+      color: var(--text-muted);
+      font-weight: 500;
+    }
+
+    .param-value {
+      font-size: 0.9rem;
+      font-weight: 700;
+      font-family: var(--font-mono);
+      color: var(--text-main);
+    }
+
+    /* Footer Metadata */
+    .metadata-bar {
+      display: flex;
+      flex-wrap: wrap;
+      justify-content: space-between;
+      gap: 1rem;
+      font-size: 0.775rem;
+      color: var(--text-dim);
+      border-top: 1px solid var(--border-color);
+      padding-top: 1rem;
+      margin-top: 1rem;
+      font-family: var(--font-mono);
+    }
+
+    /* Notificación flotante (toast) */
+    #toast {
+      position: fixed;
+      bottom: 2rem;
+      right: 2rem;
+      background: var(--bg-card);
+      border: 1px solid var(--accent-primary);
+      color: var(--text-main);
+      padding: 0.75rem 1.25rem;
+      border-radius: 0.5rem;
+      font-size: 0.85rem;
+      box-shadow: 0 10px 20px rgba(0,0,0,0.3);
+      display: none;
+      z-index: 100;
+    }
+
+    /* Estilos específicos para impresión / PDF */
+    @media print {
+      body {
+        background: #ffffff !important;
+        color: #000000 !important;
+      }
+      .header-bar, .controls-group, #toast {
+        display: none !important;
+      }
+      .container {
+        max-width: 100% !important;
+        margin: 0 !important;
+        padding: 0 !important;
+      }
+      .report-card, .kpi-card {
+        border: 1px solid #cccccc !important;
+        box-shadow: none !important;
+        break-inside: avoid;
+        background: #ffffff !important;
+        color: #000000 !important;
+      }
+      .markdown-content, .param-value, .kpi-value {
+        color: #000000 !important;
+      }
+    }
+
+    /* Modo captura PDF: ancho fijo y bloques independientes */
+    #printableReport.pdf-mode {
+      width: 1100px;
+      max-width: 1100px;
+      margin: 0;
+      padding: 0;
+    }
+    .pdf-mode .report-card { margin-bottom: 0; box-shadow: none; }
+    .pdf-mode .kpi-grid { margin-bottom: 0; grid-template-columns: repeat(4, 1fr); }
+    .pdf-mode .kpi-card { box-shadow: none; }
+    .pdf-mode .ai-card { background: transparent; border: none; box-shadow: none; padding: 0; }
+    .pdf-mode .ai-card .ai-header { background: var(--bg-card); border: 1px solid var(--border-color); border-left: 4px solid var(--accent-cyan); border-radius: 1rem; padding: 1rem 1.5rem; margin-bottom: 0; }
+    .pdf-mode .pdf-md-group { background: var(--bg-card); border: 1px solid var(--border-color); border-radius: 1rem; padding: 1.25rem 1.5rem; }
+    .pdf-mode .pdf-md-group > :first-child { margin-top: 0; }
+    .pdf-mode .pdf-md-group > :last-child { margin-bottom: 0; }
+  </style>
+</head>
+<body>
+
+  <!-- Barra Superior -->
+  <header class="header-bar">
+    <div class="brand-section">
+      <span class="brand-logo">DemandMind</span>
+      <span class="badge-pill">S&OP Executive Intelligence</span>
+      <span class="badge-pill" style="border-color: var(--accent-emerald); color: var(--accent-emerald);">ID: {{ report.report_id }}</span>
+    </div>
+    
+    <div class="controls-group">
+      <!-- Selector de Tema (Oscuro / Claro) -->
+      <button id="themeToggleBtn" class="btn" title="Alternar entre modo oscuro y claro">
+        <span id="themeIcon">☀️</span> <span id="themeLabel">Modo Claro</span>
+      </button>
+
+      <!-- Botón de Descarga PDF -->
+      <button id="downloadPdfBtn" class="btn btn-primary" title="Exportar reporte completo a PDF">
+        <span>📥</span> Descargar PDF
+      </button>
+
+      <!-- Copiar Enlace -->
+      <button id="copyLinkBtn" class="btn" title="Copiar enlace compartible">
+        <span>🔗</span> Compartir
+      </button>
+
+      <!-- Enlace a Docs -->
+      <a href="/docs" target="_blank" class="btn" title="Ver documentación en Scalar">
+        <span>⚡</span> Scalar API
+      </a>
+    </div>
+  </header>
+
+  <!-- Contenido Central del Reporte (Exportable a PDF) -->
+  <main class="container" id="printableReport">
+    
+    <!-- Header de Identificación de Producto -->
+    <div class="report-card" data-pdf-block style="border-top: 3px solid var(--accent-primary);">
+      <div style="display: flex; justify-content: space-between; align-items: flex-start; flex-wrap: wrap; gap: 1rem;">
+        <div>
+          <div style="display: flex; gap: 0.5rem; margin-bottom: 0.5rem; align-items: center;">
+            <span class="badge-pill" style="font-size: 0.8rem; background: var(--bg-card-subtle); color: var(--text-main);">Categoría: <strong>{{ report.output_data.category }}</strong></span>
+            <span class="badge-pill" style="background: rgba(16, 185, 129, 0.15); color: #34d399;">Modelo: <strong>{{ report.model_used }}</strong></span>
+          </div>
+          <h1 style="font-size: 1.6rem; font-weight: 800; letter-spacing: -0.02em; color: var(--text-main);">
+            Informe de Planificación de Demanda Mensual
+          </h1>
+          <p style="font-size: 0.875rem; color: var(--text-muted); margin-top: 0.25rem;">
+            Generado el {{ report.created_at_formatted }} | Motor: {{ report.llm_provider }}
+          </p>
+        </div>
+        <div style="text-align: right;">
+          <span style="font-size: 0.775rem; color: var(--text-dim); display: block; font-family: var(--font-mono);">Ruta en Storage:</span>
+          <code style="font-size: 0.75rem; background: var(--bg-card-subtle); padding: 0.2rem 0.5rem; border-radius: 0.35rem; color: var(--text-muted); font-family: var(--font-mono);">{{ report.storage_chart_path }}</code>
+        </div>
+      </div>
+    </div>
+
+    <!-- 1. DATA DE SALIDA (KPI CARDS) -->
+    <section class="kpi-grid" data-pdf-block>
+      <!-- Demanda Pronosticada -->
+      <div class="kpi-card emerald">
+        <div class="kpi-label">Demanda Mensual Estimada</div>
+        <div class="kpi-value">
+          {{ report.output_data.predicted_monthly_demand | default(report.output_data.ensemble_median_demand, true) }}
+          <span class="kpi-unit">unidades / mes</span>
+        </div>
+        <div class="kpi-sub">
+          Proyección del modelo {{ report.model_used }}
+        </div>
+      </div>
+
+      <!-- Nivel de Demanda -->
+      <div class="kpi-card cyan">
+        <div class="kpi-label">Rendimiento en Mercado</div>
+        <div class="kpi-value" style="font-size: 1.45rem; line-height: 1.2; padding-top: 0.35rem;">
+          {{ report.output_data.demand_tier | default('Multi-Model Consensus', true) }}
+        </div>
+        <div class="kpi-sub">
+          Clasificación competitiva de rotación
+        </div>
+      </div>
+
+      <!-- Benchmark Sector -->
+      <div class="kpi-card amber">
+        <div class="kpi-label">Mediana Sector (Benchmark)</div>
+        <div class="kpi-value">
+          {{ report.output_data.category_median_demand }}
+          <span class="kpi-unit">u / mes</span>
+        </div>
+        <div class="kpi-sub">
+          Punto central en categoría {{ report.output_data.category }}
+        </div>
+      </div>
+
+      <!-- Diferencial Relativo -->
+      <div class="kpi-card">
+        <div class="kpi-label">Diferencial vs Mediana</div>
+        <div class="kpi-value" style="color: var(--accent-emerald);">
+          {% if report.output_data.relative_vs_category_pct is defined %}
+            {% if report.output_data.relative_vs_category_pct >= 0 %}+{% endif %}{{ report.output_data.relative_vs_category_pct }}%
+          {% else %}
+            Multi-Model
+          {% endif %}
+        </div>
+        <div class="kpi-sub">
+          Índice de penetración de ventas
+        </div>
+      </div>
+    </section>
+
+    <!-- Si es reporte multi-modelo, mostrar tabla de consenso -->
+    {% if report.output_data.predictions_by_model is defined %}
+    <div class="report-card" data-pdf-block>
+      <h2 class="card-title"><span>📊</span> Desglose de Predicciones por Algoritmo</h2>
+      <div class="input-grid" style="grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));">
+        {% for model_key, val in report.output_data.predictions_by_model.items() %}
+        <div class="param-box" style="{% if model_key == 'lightgbm' %}border-color: var(--accent-emerald); background: rgba(16, 185, 129, 0.08);{% endif %}">
+          <span class="param-name">{{ model_key | replace('_', ' ') | title }}</span>
+          <span class="param-value" style="{% if model_key == 'lightgbm' %}color: var(--accent-emerald);{% endif %}">{{ val }} u</span>
+        </div>
+        {% endfor %}
+      </div>
+    </div>
+    {% endif %}
+
+    <!-- 2. LA GRÁFICA PERSISTIDA -->
+    <section class="report-card" data-pdf-block>
+      <h2 class="card-title">
+        <span>📈</span> Posicionamiento Visual y Factores Clave
+      </h2>
+      <div class="chart-wrapper">
+        <img src="{{ report.chart_url }}" alt="Gráfico de predicción de demanda" class="chart-image" id="chartImg">
+      </div>
+      <p style="text-align: center; font-size: 0.8rem; color: var(--text-dim); margin-top: 0.75rem;">
+        Activo persistido en <code>{{ report.storage_chart_path }}</code>
+      </p>
+    </section>
+
+    <!-- 3. EL REPORTE DESCRIPTIVO DEL LLM (AI DECISION ANALYSIS - OMITIDO SI LLM_ANALYZE ES FALSE) -->
+    {% if report.ai_decision_analysis and report.ai_decision_analysis.strip() %}
+    <section class="report-card ai-card" style="border-left: 4px solid var(--accent-cyan);">
+      <div class="ai-header" data-pdf-block style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1rem;">
+        <h2 class="card-title" style="margin-bottom: 0;">
+          <span>🤖</span> Análisis Ejecutivo para Toma de Decisiones
+        </h2>
+        <span class="badge-pill" style="border-color: var(--accent-cyan); color: var(--accent-cyan);">
+          {{ report.llm_provider }}
+        </span>
+      </div>
+      
+      <!-- Render Markdown mediante script JS -->
+      <div id="aiAnalysisContainer" class="markdown-content">
+        <!-- Markdown pre-cargado como texto bruto para ser renderizado -->
+        <div id="rawMarkdown" style="display: none;">{{ report.ai_decision_analysis }}</div>
+      </div>
+    </section>
+    {% endif %}
+
+    <!-- 4. DATA DE ENTRADA (INPUT PARAMETERS) -->
+    <section class="report-card" data-pdf-block>
+      <h2 class="card-title">
+        <span>⚙️</span> Parámetros y Atributos de Entrada del Producto
+      </h2>
+      <div class="input-grid">
+        <div class="param-box">
+          <span class="param-name">Categoría</span>
+          <span class="param-value">{{ report.input_data.product_category }}</span>
+        </div>
+        <div class="param-box">
+          <span class="param-name">Precio Descontado</span>
+          <span class="param-value">${{ "%.2f"|format(report.input_data.discounted_price) }}</span>
+        </div>
+        <div class="param-box">
+          <span class="param-name">Precio Original</span>
+          <span class="param-value">${{ "%.2f"|format(report.input_data.original_price) }}</span>
+        </div>
+        <div class="param-box">
+          <span class="param-name">Descuento (%)</span>
+          <span class="param-value">{{ "%.1f"|format(report.input_data.discount_percentage) }}%</span>
+        </div>
+        <div class="param-box">
+          <span class="param-name">Calificación</span>
+          <span class="param-value">{{ report.input_data.rating_num }} / 5.0</span>
+        </div>
+        <div class="param-box">
+          <span class="param-name">Total Reseñas</span>
+          <span class="param-value">{{ report.input_data.reviews_num | int }}</span>
+        </div>
+        <div class="param-box">
+          <span class="param-name">Días de Entrega</span>
+          <span class="param-value">{{ report.input_data.delivery_lead_days | int }} días</span>
+        </div>
+        <div class="param-box">
+          <span class="param-name">Insignia Best Seller</span>
+          <span class="param-value" style="color: {% if report.input_data.is_best_seller %}var(--accent-emerald){% else %}var(--text-dim){% endif %};">
+            {% if report.input_data.is_best_seller %}Activa (1){% else %}No (0){% endif %}
+          </span>
+        </div>
+        <div class="param-box">
+          <span class="param-name">Oferta Limitada</span>
+          <span class="param-value">{% if report.input_data.is_limited_deal %}Sí (1){% else %}No (0){% endif %}</span>
+        </div>
+        <div class="param-box">
+          <span class="param-name">Cupón Activo</span>
+          <span class="param-value">
+            {% if report.input_data.has_coupon %}
+              Sí (${{ report.input_data.coupon_discount_value }})
+            {% else %}
+              No
+            {% endif %}
+          </span>
+        </div>
+        <div class="param-box">
+          <span class="param-name">Buy Box (Add to Cart)</span>
+          <span class="param-value" style="color: {% if report.input_data.buy_box_availability %}var(--accent-emerald){% else %}var(--accent-rose){% endif %};">
+            {% if report.input_data.buy_box_availability %}Activo (1){% else %}Inactivo (0){% endif %}
+          </span>
+        </div>
+        <div class="param-box">
+          <span class="param-name">Sustentabilidad</span>
+          <span class="param-value">{% if report.input_data.has_sustainability %}Sí (1){% else %}No (0){% endif %}</span>
+        </div>
+      </div>
+    </section>
+
+    <!-- 5. METADATA Y AUDITORÍA TÉCNICA -->
+    <footer class="report-card" data-pdf-block style="padding: 1.25rem 1.5rem; background-color: var(--bg-card-subtle);">
+      <div style="font-weight: 700; font-size: 0.85rem; margin-bottom: 0.5rem; color: var(--text-main);">
+        Auditoría y Trazabilidad del Sistema DemandMind
+      </div>
+      <div class="metadata-bar">
+        <span>Report ID: <strong>{{ report.report_id }}</strong></span>
+        <span>Timestamp: <strong>{{ report.created_at_iso }}</strong></span>
+        <span>Latencia: <strong>{{ report.metadata.execution_time_ms }} ms</strong></span>
+        <span>Framework: <strong>{{ report.metadata.framework }}</strong></span>
+        <span>Versión: <strong>v{{ report.metadata.microservice_version }}</strong></span>
+      </div>
+    </footer>
+
+  </main>
+
+  <!-- Notificación Toast -->
+  <div id="toast">Enlace copiado al portapapeles</div>
+
+  <!-- Scripts Interactivos -->
+  <script>
+    // 1. Renderizar Markdown con marked.js
+    let rawMarkdownText = "";
+    document.addEventListener("DOMContentLoaded", function() {
+      const rawEl = document.getElementById("rawMarkdown");
+      if (rawEl) {
+        rawMarkdownText = rawEl.textContent || "";
+        const container = document.getElementById("aiAnalysisContainer");
+        if (container && rawMarkdownText.trim()) {
+          container.innerHTML = marked.parse(rawMarkdownText);
+        }
+      }
+      
+      // Inicializar tema guardado en localStorage
+      const savedTheme = localStorage.getItem("demandmind_theme") || "dark";
+      setTheme(savedTheme);
+    });
+
+    // 2. Control de Tema Oscuro / Claro
+    const htmlEl = document.documentElement;
+    const themeBtn = document.getElementById("themeToggleBtn");
+    const themeIcon = document.getElementById("themeIcon");
+    const themeLabel = document.getElementById("themeLabel");
+
+    function setTheme(theme) {
+      if (theme === "light") {
+        htmlEl.classList.remove("dark");
+        htmlEl.classList.add("light");
+        themeIcon.textContent = "🌙";
+        themeLabel.textContent = "Modo Oscuro";
+        localStorage.setItem("demandmind_theme", "light");
+      } else {
+        htmlEl.classList.remove("light");
+        htmlEl.classList.add("dark");
+        themeIcon.textContent = "☀️";
+        themeLabel.textContent = "Modo Claro";
+        localStorage.setItem("demandmind_theme", "dark");
+      }
+    }
+
+    themeBtn.addEventListener("click", function() {
+      const isDark = htmlEl.classList.contains("dark");
+      setTheme(isDark ? "light" : "dark");
+    });
+
+    // 3. Descarga de PDF por bloques: cada bloque se captura completo y nunca se corta entre paginas
+    function groupMarkdownIntoBlocks(container) {
+      const children = Array.from(container.children);
+      const groups = [];
+      let current = null;
+      children.forEach(function(el) {
+        const startNew = !current ||
+          (el.tagName === "H2" && current.children.length && current.lastElementChild.tagName !== "H1");
+        if (startNew) {
+          current = document.createElement("div");
+          current.className = "pdf-md-group";
+          current.setAttribute("data-pdf-block", "");
+          groups.push(current);
+        }
+        current.appendChild(el);
+      });
+      container.innerHTML = "";
+      groups.forEach(function(g) {
+        g.style.marginBottom = "0";
+        container.appendChild(g);
+      });
+    }
+
+    async function exportReportToPdf() {
+      const root = document.getElementById("printableReport");
+      const container = document.getElementById("aiAnalysisContainer");
+      const currentTheme = htmlEl.classList.contains("dark") ? "dark" : "light";
+      const reportId = "{{ report.report_id }}";
+      const jsPDF = window.jspdf.jsPDF;
+
+      window.scrollTo(0, 0);
+      root.classList.add("pdf-mode");
+      if (container) {
+        groupMarkdownIntoBlocks(container);
+      }
+      await document.fonts.ready;
+      await new Promise(function(r) { requestAnimationFrame(function() { setTimeout(r, 80); }); });
+
+      try {
+        const bgCss = getComputedStyle(document.body).backgroundColor;
+        const rgb = bgCss.match(/\d+/g).map(Number);
+        const mutedRgb = currentTheme === "dark" ? [148, 163, 184] : [100, 116, 139];
+
+        const pdf = new jsPDF({ unit: "mm", format: "a4", orientation: "portrait", compress: true });
+        const pageW = 210, pageH = 297, margin = 10, footerH = 8, gap = 4;
+        const usableW = pageW - 2 * margin;
+        const usableH = pageH - 2 * margin - footerH;
+
+        function paintPage() {
+          pdf.setFillColor(rgb[0], rgb[1], rgb[2]);
+          pdf.rect(0, 0, pageW, pageH, "F");
+        }
+
+        paintPage();
+        let y = margin;
+        const blocks = Array.from(root.querySelectorAll("[data-pdf-block]"));
+
+        for (const block of blocks) {
+          const canvas = await html2canvas(block, {
+            scale: 2,
+            useCORS: true,
+            backgroundColor: bgCss,
+            logging: false
+          });
+          let w = usableW;
+          let h = canvas.height * w / canvas.width;
+          if (h > usableH) {
+            h = usableH;
+            w = canvas.width * h / canvas.height;
+          }
+          if (y > margin && y + h > margin + usableH) {
+            pdf.addPage();
+            paintPage();
+            y = margin;
+          }
+          const x = margin + (usableW - w) / 2;
+          pdf.addImage(canvas.toDataURL("image/jpeg", 0.95), "JPEG", x, y, w, h);
+          y += h + gap;
+        }
+
+        const total = pdf.getNumberOfPages();
+        for (let i = 1; i <= total; i++) {
+          pdf.setPage(i);
+          pdf.setFontSize(8);
+          pdf.setTextColor(mutedRgb[0], mutedRgb[1], mutedRgb[2]);
+          pdf.text("DemandMind | Reporte " + reportId, margin, pageH - 7);
+          pdf.text("Pagina " + i + " de " + total, pageW - margin, pageH - 7, { align: "right" });
+        }
+
+        pdf.save("DemandMind_Reporte_" + reportId + "_" + currentTheme + ".pdf");
+      } finally {
+        root.classList.remove("pdf-mode");
+        if (container && rawMarkdownText) {
+          container.innerHTML = marked.parse(rawMarkdownText);
+        }
+      }
+      return currentTheme;
+    }
+
+    document.getElementById("downloadPdfBtn").addEventListener("click", function() {
+      const btn = this;
+      const originalBtnText = btn.innerHTML;
+      btn.innerHTML = "<span>⏳</span> Generando PDF...";
+      btn.disabled = true;
+
+      exportReportToPdf().then(function(theme) {
+        showToast("PDF descargado correctamente (" + theme + ")");
+      }).catch(function(err) {
+        console.error("Error al exportar PDF:", err);
+        showToast("No se pudo generar el PDF");
+      }).finally(function() {
+        btn.innerHTML = originalBtnText;
+        btn.disabled = false;
+      });
+    });
+
+    // 4. Copiar Enlace
+    document.getElementById("copyLinkBtn").addEventListener("click", function() {
+      navigator.clipboard.writeText(window.location.href).then(() => {
+        showToast("Enlace del reporte copiado al portapapeles");
+      });
+    });
+
+    function showToast(msg) {
+      const toast = document.getElementById("toast");
+      toast.textContent = msg;
+      toast.style.display = "block";
+      setTimeout(() => {
+        toast.style.display = "none";
+      }, 3000);
+    }
+  </script>
+</body>
+</html>
