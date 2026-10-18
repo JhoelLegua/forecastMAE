@@ -67,18 +67,19 @@ app = FastAPI(
     * **Documentación Interactiva:** Renderizada con **Scalar API Reference** en `/docs`.
     """,
     version="1.3.0",
-    docs_url=None,   # Desactiva Swagger UI por defecto para dar paso a Scalar
-    redoc_url=None,  # Desactiva ReDoc por defecto
+    docs_url="/swagger",  # Swagger UI disponible en /swagger
+    redoc_url=None,       # Desactiva ReDoc por defecto
     lifespan=lifespan
 )
 
-# Configuración CORS para permitir consumo desde aplicaciones web y dashboards
+# Configuración CORS permisiva para consumo desde navegadores, túneles y dashboards
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
-    allow_credentials=True,
+    allow_credentials=False,
     allow_methods=["*"],
-    allow_headers=["*"]
+    allow_headers=["*"],
+    expose_headers=["*"]
 )
 
 

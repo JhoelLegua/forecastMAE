@@ -122,15 +122,14 @@ def main():
         env = os.environ.copy()
         python_exe = sys.executable
 
-        run_script = BASE_DIR / "run.py"
+        server_log_path = STATUS_DIR / "server.log"
+        server_log_file = open(server_log_path, "a", encoding="utf-8")
         server_process = subprocess.Popen(
             [python_exe, str(run_script)],
             cwd=str(PROJECT_ROOT),
             env=env,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.STDOUT,
-            text=True,
-            bufsize=1
+            stdout=server_log_file,
+            stderr=subprocess.STDOUT
         )
 
         # Esperar hasta que /health responda
@@ -216,36 +215,38 @@ def main():
     log("Iniciando Cloudflare Tunnel para exponer el microservicio...", "INFO")
 
     tunnel_cmd = [cloudflared_bin, "tunnel", "--url", "http://localhost:8000"]
+    tunnel_log_path = STATUS_DIR / "tunnel.log"
+    tunnel_log_file = open(tunnel_log_path, "w+", encoding="utf-8")
     try:
         tunnel_process = subprocess.Popen(
             tunnel_cmd,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.STDOUT,
-            text=True,
-            bufsize=1
+            stdout=tunnel_log_file,
+            stderr=subprocess.STDOUT
         )
     except Exception as e:
         log(f"No se pudo iniciar cloudflared: {e}", "ERROR")
-        log(f"Verifica la instalación o ejecuta manualmente: {cloudflared_bin} tunnel --url http://localhost:8000", "WARNING")
+        log(f"Verifica la instalacion o ejecuta manualmente: {cloudflared_bin} tunnel --url http://localhost:8000", "WARNING")
         return
 
-    # Buscar la URL en la salida de cloudflared
+    # Buscar la URL en el archivo de log de cloudflared
     tunnel_url = None
     start_wait = time.time()
-    for line in tunnel_process.stdout:
-        if "trycloudflare.com" in line:
+    while time.time() - start_wait < 30:
+        tunnel_log_file.seek(0)
+        content = tunnel_log_file.read()
+        if "trycloudflare.com" in content:
             import re
-            match = re.search(r"https://[a-zA-Z0-9-]+\.trycloudflare\.com", line)
+            match = re.search(r"https://[a-zA-Z0-9-]+\.trycloudflare\.com", content)
             if match:
                 tunnel_url = match.group(0)
                 break
-        if time.time() - start_wait > 30:
-            break
+        time.sleep(0.5)
 
     if tunnel_url:
         save_status_json("tunnel.json", {
             "tunnel_url": tunnel_url,
             "docs_url": f"{tunnel_url}/docs",
+            "swagger_url": f"{tunnel_url}/swagger",
             "health_url": f"{tunnel_url}/health",
             "local_target": "http://localhost:8000",
             "connected_at": datetime.now(timezone.utc).isoformat()
@@ -263,16 +264,31 @@ def main():
         print("=" * 76)
         print("  Presiona CTRL+C para detener el servicio y cerrar el tunel limpiamente.\n")
     else:
-        log("No se pudo detectar la URL del túnel en los primeros 30s. Revisa la consola.", "WARNING")
+        log("No se pudo detectar la URL del tunel en los primeros 30s. Revisa status/tunnel.log.", "WARNING")
 
-    # 4. Mantener la ejecución viva y capturar CTRL+C
+    # 4. Mantener la ejecucion viva y capturar CTRL+C
     def cleanup(sig=None, frame=None):
-        print("\n[INFO] Apagando túnel y microservicio de forma segura...")
+        print("\n[INFO] Apagando tunel y microservicio de forma segura...")
         if tunnel_process:
-            tunnel_process.terminate()
+            try:
+                tunnel_process.terminate()
+            except Exception:
+                pass
         if server_process and not already_running:
-            server_process.terminate()
-        print("[OK] Procesos detenidos con éxito.")
+            try:
+                server_process.terminate()
+            except Exception:
+                pass
+        try:
+            tunnel_log_file.close()
+        except Exception:
+            pass
+        if server_log_file:
+            try:
+                server_log_file.close()
+            except Exception:
+                pass
+        print("[OK] Procesos detenidos con exito.")
         sys.exit(0)
 
     signal.signal(signal.SIGINT, cleanup)
