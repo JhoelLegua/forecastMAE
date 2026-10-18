@@ -46,6 +46,11 @@ microservice/static/charts/*.png
 !microservice/storage/charts/.gitkeep
 !microservice/static/charts/.gitkeep
 
+# Diagnósticos y JSONs de ejecución en status/
+microservice/status/*.json
+microservice/status.json
+!microservice/status/.gitkeep
+
 # Archivos de Sistema Operativo y Editores
 .DS_Store
 Thumbs.db

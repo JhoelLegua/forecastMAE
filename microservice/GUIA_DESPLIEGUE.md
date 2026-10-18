@@ -5,8 +5,9 @@ Esta guía detalla los pasos para activar el entorno, iniciar el microservicio e
 ---
 
 ## 📋 Índice
+0. [⚡ Modo Todo-en-Uno (Recomendado)](#0-modo-todo-en-uno-recomendado)
 1. [Activación del Entorno Virtual (.venv)](#1-activación-del-entorno-virtual-venv)
-2. [Levantamiento del Microservicio](#2-levantamiento-del-microservicio)
+2. [Levantamiento Manual del Microservicio](#2-levantamiento-manual-del-microservicio)
 3. [Verificación de Servicios Cloud con cURL](#3-verificación-de-servicios-cloud-con-curl)
    - [3.1. Estado General de Salud (Health Check)](#31-estado-general-de-salud-health-check)
    - [3.2. Conectividad AWS S3 y AWS RDS](#32-conectividad-aws-s3-y-aws-rds)
@@ -16,6 +17,28 @@ Esta guía detalla los pasos para activar el entorno, iniciar el microservicio e
    - [4.1. Instalación de cloudflared](#41-instalación-de-cloudflared)
    - [4.2. Iniciar el Túnel Gratuito](#42-iniciar-el-túnel-gratuito)
    - [4.3. Validación End-to-End por el Túnel](#43-validación-end-to-end-por-el-túnel)
+
+---
+
+## 0. ⚡ Modo Todo-en-Uno (Recomendado)
+
+Si deseas hacer todo en **un solo comando** (verificar AWS S3 + RDS, generar diagnósticos en `status/`, arrancar FastAPI y levantar el túnel de Cloudflare):
+
+```bash
+python microservice/start.py
+```
+
+### ¿Qué hace este script automáticamente?
+1. Detecta la ruta de `cloudflared` y los modelos ML en memoria.
+2. Levanta el servidor Uvicorn en `http://localhost:8000`.
+3. Ejecuta los checks y **actualiza los archivos JSON en la carpeta `microservice/status/`**:
+   - `status/health.json`: Salud de la app y modelos cargados.
+   - `status/aws_connectivity.json`: Conectividad en vivo con S3 y RDS.
+   - `status/recipients.json`: Destinatarios configurados para las alertas.
+   - `status/sample_prediction.json`: Inferencia de prueba en S3 y RDS.
+   - `status/tunnel.json`: URL pública generada por Cloudflare.
+4. Inicia el túnel de Cloudflare y muestra la URL pública en terminal.
+5. Al presionar `Ctrl + C`, apaga ambos procesos de forma limpia.
 
 ---
 
@@ -201,8 +224,14 @@ Si aún no tienes la utilidad `cloudflared`:
 
 ### 4.2. Iniciar el Túnel Gratuito
 
-En una terminal independiente, ejecuta:
+En una terminal independiente, puedes ejecutarlo de cualquiera de estas dos formas:
 
+#### Opción Directa (Git Bash tras instalar con winget):
+```bash
+"/c/Program Files (x86)/cloudflared/cloudflared.exe" tunnel --url http://localhost:8000
+```
+
+#### Opción Estándar (si ya reconoces cloudflared en tu PATH):
 ```bash
 cloudflared tunnel --url http://localhost:8000
 ```
