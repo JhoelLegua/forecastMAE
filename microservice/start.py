@@ -96,7 +96,7 @@ def check_local_endpoint(url: str, method: str = "GET", payload: dict = None, ti
 
 def main():
     print("\n" + "=" * 76)
-    print("      🚀 DEMANDMIND FORECASTING: LANZADOR Y VERIFICADOR AUTOMÁTICO")
+    print("      DEMANDMIND FORECASTING: LANZADOR Y VERIFICADOR AUTOMATICO")
     print("=" * 76)
 
     cloudflared_bin = find_cloudflared_path()
@@ -252,16 +252,16 @@ def main():
         })
 
         print("\n" + "=" * 76)
-        print(" 🎉 DEMANDMIND MICROSERVICE Y TÚNEL CLOUDFLARE EN LÍNEA")
+        print("  DEMANDMIND MICROSERVICE Y TUNEL CLOUDFLARE EN LINEA")
         print("=" * 76)
-        print(f" 🌐 URL Pública (Túnel Cloudflare): {tunnel_url}")
-        print(f" 📚 Scalar API Docs Interactiva:    {tunnel_url}/docs")
-        print(f" 📊 Swagger UI Alternativo:        {tunnel_url}/swagger")
-        print(f" 📈 Diagnóstico de Salud:           {tunnel_url}/health")
-        print(f" 🏠 Servidor Local:                 http://localhost:8000")
-        print(f" 📂 Archivos JSON de diagnóstico:   microservice/status/")
+        print(f"  URL Publica (Tunel Cloudflare): {tunnel_url}")
+        print(f"  Scalar API Docs Interactiva:    {tunnel_url}/docs")
+        print(f"  Swagger UI Alternativo:         {tunnel_url}/swagger")
+        print(f"  Diagnostico de Salud:           {tunnel_url}/health")
+        print(f"  Servidor Local:                 http://localhost:8000")
+        print(f"  Archivos JSON de diagnostico:   microservice/status/")
         print("=" * 76)
-        print(" Presiona CTRL+C para detener el servicio y cerrar el túnel limpiamente.\n")
+        print("  Presiona CTRL+C para detener el servicio y cerrar el tunel limpiamente.\n")
     else:
         log("No se pudo detectar la URL del túnel en los primeros 30s. Revisa la consola.", "WARNING")
 

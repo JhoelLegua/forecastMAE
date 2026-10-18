@@ -171,5 +171,6 @@ LLM_ANALYZE=true
    - **Scalar API Reference**: `http://localhost:8000/docs`
    - **Estado de Infraestructura**: `http://localhost:8000/notifications/status`
 
-> 📘 **Guía Rápida de Despliegue y Pruebas**: Consulta [`GUIA_DESPLIEGUE.md`](GUIA_DESPLIEGUE.md) para ver los comandos detallados de activación, pruebas con `curl` para AWS S3/RDS y exposición a Internet mediante Cloudflare Tunnel.
+> **Guia Rapida de Despliegue y Pruebas**: Consulta [`GUIA_DESPLIEGUE.md`](GUIA_DESPLIEGUE.md) para ver los comandos detallados de activacion, pruebas con `curl` para AWS S3/RDS y exposicion a Internet mediante Cloudflare Tunnel.
+
 
