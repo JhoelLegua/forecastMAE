@@ -47,19 +47,26 @@ def log(msg: str, tag: str = "INFO"):
 
 
 def find_cloudflared_path() -> str:
-    """Busca el ejecutable de cloudflared en PATH y rutas comunes de Windows."""
+    """Busca el ejecutable de cloudflared en PATH y rutas comunes de Windows, Linux y macOS."""
     in_path = shutil.which("cloudflared")
     if in_path:
         return in_path
 
     candidates = [
+        # Windows
         r"C:\Program Files (x86)\cloudflared\cloudflared.exe",
         r"C:\Program Files\cloudflared\cloudflared.exe",
         os.path.expandvars(r"%LOCALAPPDATA%\cloudflared\cloudflared.exe"),
-        os.path.expandvars(r"%USERPROFILE%\cloudflared.exe")
+        os.path.expandvars(r"%USERPROFILE%\cloudflared.exe"),
+        # Linux & macOS
+        "/usr/local/bin/cloudflared",
+        "/opt/homebrew/bin/cloudflared",
+        "/usr/bin/cloudflared",
+        os.path.expanduser("~/.local/bin/cloudflared"),
+        os.path.expanduser("~/bin/cloudflared")
     ]
     for c in candidates:
-        if os.path.isfile(c):
+        if os.path.isfile(c) and (os.access(c, os.X_OK) or sys.platform == "win32"):
             return c
     return "cloudflared"
 
@@ -169,8 +176,8 @@ def main():
     try:
         aws_data = check_local_endpoint("http://localhost:8000/notifications/status")
         save_status_json("aws_connectivity.json", aws_data)
-        s3_ok = aws_data.get("s3", {}).get("active_mode") or "Desconocido"
-        rds_ok = aws_data.get("database", {}).get("active_mode") or "Desconocido"
+        s3_ok = aws_data.get("storage_backend", {}).get("active_mode") or "Desconocido"
+        rds_ok = aws_data.get("database_backend", {}).get("active_mode") or "Desconocido"
         log(f"Estado S3: {s3_ok} | Estado BD: {rds_ok}", "SUCCESS")
     except Exception as e:
         log(f"Error verificando status AWS: {e}", "WARNING")
