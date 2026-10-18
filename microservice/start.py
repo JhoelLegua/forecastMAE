@@ -112,16 +112,21 @@ def main():
 
     # 1. Comprobar si el microservicio ya está corriendo en el puerto 8000
     server_process = None
+    server_log_file = None
+    tunnel_process = None
+    tunnel_log_file = None
     already_running = False
+
     try:
         health = check_local_endpoint("http://localhost:8000/health", timeout=2)
-        log("El microservicio ya se encuentra en ejecución en http://localhost:8000", "SUCCESS")
+        log("El microservicio ya se encuentra en ejecucion en http://localhost:8000", "SUCCESS")
         already_running = True
     except Exception:
         log("Iniciando microservicio FastAPI con Uvicorn en http://localhost:8000...", "INFO")
         env = os.environ.copy()
         python_exe = sys.executable
 
+        run_script = BASE_DIR / "run.py"
         server_log_path = STATUS_DIR / "server.log"
         server_log_file = open(server_log_path, "a", encoding="utf-8")
         server_process = subprocess.Popen(

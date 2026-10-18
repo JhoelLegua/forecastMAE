@@ -48,6 +48,7 @@ microservice/static/charts/*.png
 
 # Diagnósticos y JSONs de ejecución en status/
 microservice/status/*.json
+microservice/status/*.log
 microservice/status.json
 !microservice/status/.gitkeep
 
