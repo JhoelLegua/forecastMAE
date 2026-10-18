@@ -170,3 +170,6 @@ LLM_ANALYZE=true
 3. Abrir la documentación interactiva:
    - **Scalar API Reference**: `http://localhost:8000/docs`
    - **Estado de Infraestructura**: `http://localhost:8000/notifications/status`
+
+> 📘 **Guía Rápida de Despliegue y Pruebas**: Consulta [`GUIA_DESPLIEGUE.md`](GUIA_DESPLIEGUE.md) para ver los comandos detallados de activación, pruebas con `curl` para AWS S3/RDS y exposición a Internet mediante Cloudflare Tunnel.
+
